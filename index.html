@@ -1,0 +1,218 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>けんせつトリピー ARカメラ</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #000;
+      }
+
+      /* シャッターボタン */
+      .shutter {
+        position: fixed;
+        bottom: 40px;
+        left: 60px;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 4px solid white;
+        background: #ff8c00;
+        z-index: 100;
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 30px;
+        transition: transform 0.3s;
+      }
+
+      /* 回転切り替えボタン */
+      .rotate-btn {
+        position: fixed;
+        bottom: 140px;
+        left: 75px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        border: 2px solid white;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        z-index: 100;
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 20px;
+      }
+
+      #flash {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: white;
+        opacity: 0;
+        z-index: 200;
+        pointer-events: none;
+      }
+
+      /* 右下のトリピー（デフォルトは縦） */
+      #toripy {
+        position: fixed;
+        bottom: 10px;
+        right: 5px;
+        width: 65vw;
+        height: auto;
+        z-index: 90;
+        pointer-events: none;
+        transition: all 0.3s ease-in-out;
+        transform-origin: center center; /* 右下を基点に回す */
+      }
+
+      /* 横画面モード：バイバイさせない修正 */
+      .landscape-mode #toripy {
+        /* 90度回した後、上に画像幅分だけ引き戻し、右に少し寄せる */
+        transform: rotate(-90deg);
+        /* 必要に応じて、回転後の重なりを微調整 */
+        bottom: 40px;
+        right: -20px;
+      }
+
+      .landscape-mode .shutter {
+        transform: rotate(-90deg);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="flash"></div>
+    <div class="rotate-btn" id="rotateBtn">🔄</div>
+    <div class="shutter" id="shutterBtn">📸</div>
+    <img id="toripy" src="" />
+    <script>
+      const shutterBtn = document.getElementById("shutterBtn");
+      const rotateBtn = document.getElementById("rotateBtn");
+      const toripyImg = document.getElementById("toripy");
+      const video = document.createElement("video");
+      const flash = document.getElementById("flash");
+
+      // 1. デザインのランダム表示
+      const toripyFiles = [
+        "toripy_A.svg",
+        "toripy_B.svg", // もう一つのファイル名に合わせて修正してください
+      ];
+      toripyImg.src =
+        toripyFiles[Math.floor(Math.random() * toripyFiles.length)];
+
+      // 2. 横向きモードのトグル
+      rotateBtn.addEventListener("click", () => {
+        document.body.classList.toggle("landscape-mode");
+      });
+
+      // --- 以下、既存のカメラ・音・撮影ロジック ---
+      const playShutterSound = () => {
+        const audioCtx = new (
+          window.AudioContext || window.webkitAudioContext
+        )();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(1320, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(
+          660,
+          audioCtx.currentTime + 0.1,
+        );
+        gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.01,
+          audioCtx.currentTime + 0.12,
+        );
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.12);
+      };
+
+      const startCamera = async () => {
+        video.setAttribute("autoplay", "");
+        video.setAttribute("muted", "");
+        video.setAttribute("playsinline", "");
+        document.body.appendChild(video);
+        video.style.position = "fixed";
+        video.style.top = "0";
+        video.style.left = "0";
+        video.style.width = "100%";
+        video.style.height = "100%";
+        video.style.objectFit = "cover";
+        video.style.zIndex = "-1";
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: "environment" } },
+          });
+          video.srcObject = stream;
+        } catch (err) {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+          video.srcObject = stream;
+        }
+      };
+
+      // 合成ロジックも「中心回転」に合わせてシンプル化
+      const takePhoto = () => {
+        flash.style.opacity = "1";
+        setTimeout(() => {
+          flash.style.opacity = "0";
+        }, 100);
+        playShutterSound();
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const ratio = canvas.width / window.innerWidth;
+        const w = toripyImg.offsetWidth * ratio;
+        const h = toripyImg.offsetHeight * ratio;
+
+        ctx.save();
+        if (document.body.classList.contains("landscape-mode")) {
+          // 1. 画像の中心を回転の基点にする
+          const centerX = canvas.width - w / 2 - 20 * ratio;
+          const centerY = canvas.height - h / 2 - 20 * ratio;
+
+          ctx.translate(centerX, centerY);
+          ctx.rotate((-90 * Math.PI) / 180);
+          // 2. 中心から半分戻して描画
+          ctx.drawImage(toripyImg, -w / 2, -h / 2, w, h);
+        } else {
+          // 縦向き：そのまま描画
+          ctx.drawImage(
+            toripyImg,
+            canvas.width - w - 20 * ratio,
+            canvas.height - h - 20 * ratio,
+            w,
+            h,
+          );
+        }
+        ctx.restore();
+
+        const link = document.createElement("a");
+        link.download = `toripy_${Date.now()}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      };
+
+      startCamera();
+      shutterBtn.addEventListener("click", takePhoto);
+    </script>
+  </body>
+</html>
